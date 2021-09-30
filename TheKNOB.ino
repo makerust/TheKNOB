@@ -4,7 +4,7 @@
 #include <BleKeyboard.h>
 BleKeyboard bleKeyboard("The KNOB", "Pangolin Design Team", 69);
 
-//#define DEBUG
+#define DEBUG
 
 //Pin defines
 #define ENCODER_A ((uint8_t) 18)
@@ -16,6 +16,8 @@ BleKeyboard bleKeyboard("The KNOB", "Pangolin Design Team", 69);
 //Global mailbox array
 #define MAILBOX_LENGTH 40
 uint8_t key_mailbox[MAILBOX_LENGTH];
+
+uint8_t encoder_mailbox[MAILBOX_LENGTH];
 
 uint8_t mb_search(uint8_t mailbox[]){
   uint8_t mailbox_length = MAILBOX_LENGTH;
@@ -32,12 +34,13 @@ uint8_t mb_search(uint8_t mailbox[]){
 int IRAM_ATTR key_detect(int enc_tick) {//remove whole keypresses from ISR and replace with buffer.
   noInterrupts();//disable interrupts
 
-  int pin_state_now = 0;//byte pack of pinstates
   //-- encoder states are read first since they are fast
   // other button states read after debounce
-  //[Button 2 | Button 1 | Encoder button | Encoder B | Encoder A]
-  int enc_clk_now = pin_state_now |= (digitalRead(ENCODER_A) << 1);
-  int enc_dt_now = pin_state_now |= digitalRead(ENCODER_B);  
+  int enc_clk_now = digitalRead(ENCODER_A);
+  int enc_dt_now = digitalRead(ENCODER_B); 
+
+   
+  static int enc_composit ;//byte pack of pinstates
   
   //-- variables for Debouncing signals
   static unsigned long last_interrupt_time = 0;
@@ -48,39 +51,87 @@ int IRAM_ATTR key_detect(int enc_tick) {//remove whole keypresses from ISR and r
   static int last_send = 0; //0 = non encoder, 1 = cw, 2 = ccw
 
   
-  if(interrupt_time - last_interrupt_time > 3){//debounces interrupts
+  if(interrupt_time - last_interrupt_time > 10){//debounces interrupts
 
     last_interrupt_time = interrupt_time;
   
     //Build a byte of pin states
-    //[Button 2 | Button 1 | Encoder button | Encoder B | Encoder A]
-    // pin_state_now |= (!(digitalRead(BUTTON_2) << 4));
     // pin_state_now |= (!(digitalRead(BUTTON_1) << 3));
-    // pin_state_now |= (!(digitalRead(ENCODER_BUTTON)) << 2);
+
+    enc_composit |= (enc_dt_now << 3);
+    enc_composit |= (enc_clk_now << 2);
     
     //Position stored here. 0: no change, 1: CW, -1: CCW
     int enc_position=0;
-    static int enc_clk_prev =0;
 
-    if (enc_clk_prev != enc_clk_now && enc_clk_now == 0)// 
-      if(enc_dt_now != enc_clk_now){
-        if((interrupt_time - last_encoder_send_time > ENCODER_FLOP_COOLDOWN) || last_send != 2){
-          enc_position=1;
-          last_send = 1;
-          last_encoder_send_time = millis();
-        }
+    switch (enc_composit) {
+      case 2: case 4: case 11: case 13:
+        enc_position=1;
+        break;
+      case 1: case 7: case 8: case 14:
+        enc_position = -1;
+        break;
+      default:
+        //enc_position=0;
+        break;
+    }
+    //Serial.print("Enc Composit ");
+    //Serial.println(enc_composit);
+    if (enc_composit < 0){
+      int encoder_mb_len = mb_search(encoder_mailbox);
+      if (encoder_mb_len < (MAILBOX_LENGTH -1)){
+        encoder_mailbox[encoder_mb_len] = enc_composit;
       }
-      else{
-        if((interrupt_time - last_encoder_send_time > ENCODER_FLOP_COOLDOWN) || last_send != 1){
-          enc_position =-1;
-          last_send=2;
-          last_encoder_send_time = millis();
-        }
-      }
-//      else{
-//        last_send=0;
-//      }
-    enc_clk_prev = enc_clk_now;
+    }
+    enc_composit = enc_composit >> 2;
+
+    //2 8 10
+    //0010
+    //1000
+    //1010
+
+/*
+    0 0 0 0 | 0 | X
+    0 0 0 1 | 1 | CCW
+    0 0 1 0 | 2 | CW
+    0 0 1 1 | 3 | X
+    0 1 0 0 | 4 | CW
+    0 1 0 1 | 5 | X
+    0 1 1 0 | 6 | X
+    0 1 1 1 | 7 | CCW
+    1 0 0 0 | 8 | CCW
+    1 0 0 1 | 9 | X
+    1 0 1 0 | 10| X
+    1 0 1 1 | 11| CW
+    1 1 0 0 | 12| X
+    1 1 0 1 | 13| CW
+    1 1 1 0 | 14| CCW
+    1 1 1 1 | 15| X
+
+*/    
+
+
+//     static int enc_clk_prev =0;
+
+//     if (enc_clk_prev != enc_clk_now && enc_clk_now == 0)// 
+//       if(enc_dt_now != enc_clk_now){
+//         if((interrupt_time - last_encoder_send_time > ENCODER_FLOP_COOLDOWN) || last_send != 2){
+//           enc_position=1;
+//           last_send = 1;
+//           last_encoder_send_time = millis();
+//         }
+//       }
+//       else{
+//         if((interrupt_time - last_encoder_send_time > ENCODER_FLOP_COOLDOWN) || last_send != 1){
+//           enc_position =-1;
+//           last_send=2;
+//           last_encoder_send_time = millis();
+//         }
+//       }
+// //      else{
+// //        last_send=0;
+// //      }
+//     enc_clk_prev = enc_clk_now;
     
     //this encoder works weird. Trans low on each tick, A leads if cw, b leads if ccw. Reverts to vcc always!
     //This packs a byte where 
@@ -113,7 +164,7 @@ int IRAM_ATTR key_detect(int enc_tick) {//remove whole keypresses from ISR and r
 
      
 
-
+    //int pin_state_now = 0;//hack since I took out pin read packet
 
     uint8_t index_now = mb_search(key_mailbox);
     
@@ -124,14 +175,15 @@ int IRAM_ATTR key_detect(int enc_tick) {//remove whole keypresses from ISR and r
       // if((pin_state_now & (1 << 4)) !=  0){//function key press.
       //    key_mailbox[index_now] = 1;
       // }
-      if((pin_state_now & (1 << 3)) !=  0){ //if FFRW key pressed, encoder encodes for FFRW
-        if(enc_position > 0){
-          key_mailbox[index_now] = 2;
-        }
-        if(enc_position < 0){
-          key_mailbox[index_now] = 3;
-        }   
-      }
+//      if((pin_state_now & (1 << 3)) !=  0){ //if FFRW key pressed, encoder encodes for FFRW
+//        if(enc_position > 0){
+//          key_mailbox[index_now] = 2;
+//        }
+//        if(enc_position < 0){
+//          key_mailbox[index_now] = 3;
+//        }   
+//      }
+      if(1);
       else{
         if(enc_position > 0){//if not pressed, encode volume
           key_mailbox[index_now] = 5;
@@ -190,6 +242,7 @@ void IRAM_ATTR key_detectB() {key_detect(2);}
 void setup() {
   for (int i = 0; i < MAILBOX_LENGTH; i++){
     key_mailbox[i]=0;
+    
   }
   // make the pushButton pin an input:
   pinMode(BUTTON_2, INPUT_PULLUP);
@@ -201,7 +254,7 @@ void setup() {
   pinMode(ENCODER_A, INPUT);
   attachInterrupt(digitalPinToInterrupt(ENCODER_A), key_detectA, CHANGE);
   pinMode(ENCODER_B, INPUT);
-  //attachInterrupt(digitalPinToInterrupt(ENCODER_B), key_detectB, FALLING);
+  attachInterrupt(digitalPinToInterrupt(ENCODER_B), key_detectB, CHANGE);
 
   
   // initialize control over the keyboard:
@@ -217,6 +270,15 @@ void setup() {
 
 
 void loop() {
+  uint8_t hack_mailbox_index = mb_search(encoder_mailbox);
+  if(hack_mailbox_index != 0){
+    for (int ii = 0; ii < MAILBOX_LENGTH; ii++){
+      Serial.print("enc comp: ");
+      Serial.println(encoder_mailbox[ii]);
+      encoder_mailbox[ii]=0;
+    }
+  }
+  
   if(bleKeyboard.isConnected()){
     uint8_t mailbox_index =mb_search(key_mailbox);
     if(mailbox_index != 0){ 
@@ -269,14 +331,14 @@ void loop() {
       }
     }
     else{
-      #ifdef DEBUG
-      Serial.print("Mailbox size: ");
-      Serial.println(mailbox_index); 
-      #endif
+//      #ifdef DEBUG
+//      Serial.print("Mailbox size: ");
+//      Serial.println(mailbox_index); 
+//      #endif
     }
-    #ifdef DEBUG
-    delay(300);
-    #endif
+//    #ifdef DEBUG
+//    delay(300);
+//    #endif
      
   }
   else{
