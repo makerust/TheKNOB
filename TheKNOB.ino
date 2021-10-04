@@ -1,6 +1,7 @@
 /* -- The Kinesthetic Oblate Novelty Button --
 */
 
+#define USE_NIMBLE
 #include <BleKeyboard.h>
 BleKeyboard bleKeyboard("The KNOB", "Pangolin Design Team", 69);
 
@@ -29,9 +30,11 @@ uint8_t mb_search(uint8_t mailbox[]){
   return last_used_index;
 }
 
-int IRAM_ATTR key_detect(int enc_tick) {//remove whole keypresses from ISR and replace with buffer.
-  noInterrupts();//disable interrupts
+portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
 
+int IRAM_ATTR key_detect(int enc_tick) {//remove whole keypresses from ISR and replace with buffer.
+  portENTER_CRITICAL(&mux);//disable interrupts
+  
   int pin_state_now = 0;//byte pack of pinstates
   //-- encoder states are read first since they are fast
   // other button states read after debounce
@@ -145,7 +148,7 @@ int IRAM_ATTR key_detect(int enc_tick) {//remove whole keypresses from ISR and r
       // }
     }  
   }  
-    interrupts();
+    portEXIT_CRITICAL(&mux);//reenable interrupts
     return 0;    
 }
 
