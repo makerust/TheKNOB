@@ -31,14 +31,15 @@ uint8_t mb_search(uint8_t mailbox[]){
   return last_used_index;
 }
 
+portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
+
 int IRAM_ATTR key_detect(int enc_tick) {//remove whole keypresses from ISR and replace with buffer.
-  noInterrupts();//disable interrupts
+  portENTER_CRITICAL(&mux);//disable interrupts
 
   //-- encoder states are read first since they are fast
   // other button states read after debounce
   int enc_clk_now = digitalRead(ENCODER_A);
   int enc_dt_now = digitalRead(ENCODER_B); 
-
    
   static int enc_composit ;//byte pack of pinstates
   
@@ -51,7 +52,7 @@ int IRAM_ATTR key_detect(int enc_tick) {//remove whole keypresses from ISR and r
   static int last_send = 0; //0 = non encoder, 1 = cw, 2 = ccw
 
   
-  if(interrupt_time - last_interrupt_time > 10){//debounces interrupts
+  if(interrupt_time - last_interrupt_time > 0){//debounces interrupts| 0 WORKED VERY WELL
 
     last_interrupt_time = interrupt_time;
   
@@ -75,9 +76,7 @@ int IRAM_ATTR key_detect(int enc_tick) {//remove whole keypresses from ISR and r
         //enc_position=0;
         break;
     }
-    //Serial.print("Enc Composit ");
-    //Serial.println(enc_composit);
-    if (enc_composit < 0){
+    if (enc_composit > 0){
       int encoder_mb_len = mb_search(encoder_mailbox);
       if (encoder_mb_len < (MAILBOX_LENGTH -1)){
         encoder_mailbox[encoder_mb_len] = enc_composit;
@@ -85,10 +84,8 @@ int IRAM_ATTR key_detect(int enc_tick) {//remove whole keypresses from ISR and r
     }
     enc_composit = enc_composit >> 2;
 
-    //2 8 10
-    //0010
-    //1000
-    //1010
+//12 | 7 | 9 | 2 | 8 | 2
+//x  |ccw| x | cw|ccw|cw
 
 /*
     0 0 0 0 | 0 | X
@@ -110,71 +107,12 @@ int IRAM_ATTR key_detect(int enc_tick) {//remove whole keypresses from ISR and r
 
 */    
 
-
-//     static int enc_clk_prev =0;
-
-//     if (enc_clk_prev != enc_clk_now && enc_clk_now == 0)// 
-//       if(enc_dt_now != enc_clk_now){
-//         if((interrupt_time - last_encoder_send_time > ENCODER_FLOP_COOLDOWN) || last_send != 2){
-//           enc_position=1;
-//           last_send = 1;
-//           last_encoder_send_time = millis();
-//         }
-//       }
-//       else{
-//         if((interrupt_time - last_encoder_send_time > ENCODER_FLOP_COOLDOWN) || last_send != 1){
-//           enc_position =-1;
-//           last_send=2;
-//           last_encoder_send_time = millis();
-//         }
-//       }
-// //      else{
-// //        last_send=0;
-// //      }
-//     enc_clk_prev = enc_clk_now;
-    
-    //this encoder works weird. Trans low on each tick, A leads if cw, b leads if ccw. Reverts to vcc always!
-    //This packs a byte where 
-    //[ ISR ENC A | ISR ENC B | pin_state ENC A | pin_state ENC B]
-    // int encode_state = ( (((enc_tick >> 1) & 1)<<3) |(((enc_tick >> 0) & 1)<<2) |(((pin_state_now >> 1) & 1)<<1) | ((pin_state_now >> 0) & 1));
-    // switch (encode_state){
-    //   case 5://0101 CW case
-    //     if((interrupt_time - last_encoder_send_time > ENCODER_FLOP_COOLDOWN) || last_send != 2){
-    //       //various iterations would cause some amount of false (opposite)
-    //       //reads, e.g. rotating the encoder CW would produce mostly CW
-    //       //read state with occasional CCW reads. This made usage frustrating
-    //       //The tests requires a timeout between changing directions or a
-    //       //same direction read before registering a new encoder position
-    //       enc_position = 1;
-    //       last_encoder_send_time = millis();
-    //       last_send = 1;
-    //     }
-    //     break;
-    //   case 11: //1011 CCW case I would expect this case to be 1010, but case 10 didn't work
-    //     if((interrupt_time - last_encoder_send_time > ENCODER_FLOP_COOLDOWN) || last_send != 1){
-    //       enc_position = (-1);
-    //       last_encoder_send_time = millis();
-    //       last_send = 2;
-    //     }
-    //     break;
-    //   default:
-    //     enc_position =0;
-    //     break;
-    // }
-
-     
-
-    //int pin_state_now = 0;//hack since I took out pin read packet
-
     uint8_t index_now = mb_search(key_mailbox);
     
     if (index_now <= (MAILBOX_LENGTH-1)){//Check to not overflow the mailbox array.
     // If service cannot empty in time, itmes are not added to mailbox
     //-- This function puts a message into for each distinct key event
     //[1: Function key press | 2: encoder CW with mod | 3: encoder CCW with mod| 4:]
-      // if((pin_state_now & (1 << 4)) !=  0){//function key press.
-      //    key_mailbox[index_now] = 1;
-      // }
 //      if((pin_state_now & (1 << 3)) !=  0){ //if FFRW key pressed, encoder encodes for FFRW
 //        if(enc_position > 0){
 //          key_mailbox[index_now] = 2;
@@ -183,26 +121,26 @@ int IRAM_ATTR key_detect(int enc_tick) {//remove whole keypresses from ISR and r
 //          key_mailbox[index_now] = 3;
 //        }   
 //      }
-      if(1);
-      else{
+
+
         if(enc_position > 0){//if not pressed, encode volume
           key_mailbox[index_now] = 5;
         }
         else if(enc_position < 0){
           key_mailbox[index_now] = 6;
         }
-      }
+
       // if((pin_state_now & (1<<2)) != 0){//encoder button
       //   key_mailbox[index_now] = 4;
       // }
     }  
   }  
-    interrupts();
+    portEXIT_CRITICAL(&mux);//reenable interrupts
     return 0;    
 }
 
 void IRAM_ATTR key_detectO(){
-  noInterrupts();//disable interrupts
+  portENTER_CRITICAL(&mux);//disable interrupts
 
 //  int encoder_button_state = digitalRead(ENCODER_BUTTON);
 //  int function_button_state = digitalRead(BUTTON_2);
@@ -229,7 +167,7 @@ void IRAM_ATTR key_detectO(){
         }
      }
   }
-  interrupts();  
+  portEXIT_CRITICAL(&mux);//enable interrupts  
 }
 
 //Consistent Encoder decoding has required tracking
@@ -270,14 +208,14 @@ void setup() {
 
 
 void loop() {
-  uint8_t hack_mailbox_index = mb_search(encoder_mailbox);
-  if(hack_mailbox_index != 0){
-    for (int ii = 0; ii < MAILBOX_LENGTH; ii++){
-      Serial.print("enc comp: ");
-      Serial.println(encoder_mailbox[ii]);
-      encoder_mailbox[ii]=0;
-    }
-  }
+//  uint8_t hack_mailbox_index = mb_search(encoder_mailbox);
+//  if(hack_mailbox_index != 0){
+//    for (int ii = 0; ii < hack_mailbox_index; ii++){
+//      Serial.print("enc comp: ");
+//      Serial.println(encoder_mailbox[ii]);
+//      encoder_mailbox[ii]=0;
+//    }
+//  }
   
   if(bleKeyboard.isConnected()){
     uint8_t mailbox_index =mb_search(key_mailbox);
