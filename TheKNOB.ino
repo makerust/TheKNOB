@@ -1,7 +1,7 @@
 /* -- The Kinesthetic Oblate Novelty Button --
 */
 
-#include <BleKeyboard.h>
+#include <BleKeyboard.h>//works with version 0.2.3 of the library
 BleKeyboard bleKeyboard("The KNOB", "Pangolin Design Team", 69);
 
 #define DEBUG
