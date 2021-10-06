@@ -2,6 +2,7 @@
 */
 
 #include <BleKeyboard.h>//works with version 0.2.3 of the library
+//https://github.com/T-vK/ESP32-BLE-Keyboard/tree/0.2.3
 BleKeyboard bleKeyboard("The KNOB", "Pangolin Design Team", 69);
 
 #define DEBUG
