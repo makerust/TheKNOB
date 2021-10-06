@@ -8,11 +8,14 @@ BleKeyboard bleKeyboard("The KNOB", "Pangolin Design Team", 69);
 #define DEBUG
 
 //Pin defines
-#define ENCODER_A ((uint8_t) 18)
-#define ENCODER_B ((uint8_t) 17)
-#define ENCODER_BUTTON ((uint8_t) 16)
-#define BUTTON_1 ((uint8_t) 1)
-#define BUTTON_2 ((uint8_t) 2) 
+#define ENCODER_A ((uint8_t) 13)
+#define ENCODER_B ((uint8_t) 14)
+#define ENCODER_BUTTON ((uint8_t) 27)
+#define BUTTON_1 ((uint8_t) 32)
+#define BUTTON_2 ((uint8_t) 33)
+//#define BATT_VOLT_PIN ((uint8_t) 1) 
+
+
 
 //Global mailbox array
 #define MAILBOX_LENGTH 40
@@ -97,20 +100,21 @@ void IRAM_ATTR enc_ISR() {//remove whole keypresses from ISR and replace with bu
     // If service cannot empty in time, itmes are not added to mailbox
     //-- This function puts a message into for each distinct key event
  
-//      if(button_state_now == 1){ //if FFRW key pressed, encoder encodes for FFRW
-//        if(enc_position > 0){
-//          key_mailbox[index_now] = 2;
-//        }
-//        if(enc_position < 0){
-//          key_mailbox[index_now] = 3;
-//        }   
-//      }
-
-      if(enc_position > 0){//if not pressed, encode volume
-        key_mailbox[index_now] = 5;
+      if(button_state_now == 1){ //if FFRW key pressed, encoder encodes for FFRW
+        if(enc_position > 0){
+          key_mailbox[index_now] = 2;
+        }
+        if(enc_position < 0){
+          key_mailbox[index_now] = 3;
+        }   
       }
-      else if(enc_position < 0){
-        key_mailbox[index_now] = 6;
+      else{
+        if(enc_position > 0){//if not pressed, encode volume
+          key_mailbox[index_now] = 5;
+        }
+        else if(enc_position < 0){
+          key_mailbox[index_now] = 6;
+        }
       }
     }  
   }  
@@ -147,11 +151,13 @@ void setup() {
   for (int i = 0; i < MAILBOX_LENGTH; i++){
     key_mailbox[i]=0;    
   }
+
+
   // make the pushButton pin an input:
   pinMode(BUTTON_2, INPUT_PULLUP);
-  //attachInterrupt(digitalPinToInterrupt(BUTTON_2), key_detect, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(BUTTON_2), key_detect, FALLING);
   pinMode(BUTTON_1, INPUT_PULLUP);
-  //attachInterrupt(digitalPinToInterrupt(BUTTON_1), key_detect, CHANGE);
+  //attachInterrupt(digitalPinToInterrupt(BUTTON_1), key_detect, FALLING);
   pinMode(ENCODER_BUTTON, INPUT);
   attachInterrupt(digitalPinToInterrupt(ENCODER_BUTTON), key_detect, FALLING);
   pinMode(ENCODER_A, INPUT);
@@ -171,7 +177,11 @@ void setup() {
 
 
 
-void loop() {  
+void loop() {
+    //timing globals for power saving
+  static unsigned long last_send_time = 0;
+  unsigned long now_send_time;
+  unsigned long power_timeout = 600000;// Ten minutes in ms  
   if(bleKeyboard.isConnected()){
     uint8_t mailbox_index =mb_search(key_mailbox);
     if(mailbox_index != 0){ 
@@ -220,8 +230,13 @@ void loop() {
           default:
             break;
         }
-        key_mailbox[i] = 0;     
+        key_mailbox[i] = 0;
+        last_send_time = millis();     
       }
+    }
+    now_send_time = millis();
+    if(last_send_time - now_send_time > power_timeout){
+      
     }
     else{
 
