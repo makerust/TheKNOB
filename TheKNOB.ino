@@ -15,6 +15,8 @@ BleKeyboard bleKeyboard("The KNOB", "Pangolin Design Team", 69);
 #define BUTTON_2 ((uint8_t) 33)
 //#define BATT_VOLT_PIN ((uint8_t) 1) 
 
+RTC_DATA_ATTR int bootCount =0; 
+
 
 
 //Global mailbox array
@@ -151,7 +153,11 @@ void setup() {
   for (int i = 0; i < MAILBOX_LENGTH; i++){
     key_mailbox[i]=0;    
   }
+  //the above may be a problem for caching keypresses between wakeup
+  //and boot. Suggested static "BOOT" bool set to 1 in Setup()
 
+  //Remove ENCODER_BUTTON as a RTC gpio
+  //rtc_gpio_deinit(GPIO_NUM_27);
 
   // make the pushButton pin an input:
   pinMode(BUTTON_2, INPUT_PULLUP);
@@ -181,7 +187,8 @@ void loop() {
     //timing globals for power saving
   static unsigned long last_send_time = 0;
   unsigned long now_send_time;
-  unsigned long power_timeout = 600000;// Ten minutes in ms  
+  
+  unsigned long power_timeout_debug = 60000; //600000;// Ten minutes in ms  
   if(bleKeyboard.isConnected()){
     uint8_t mailbox_index =mb_search(key_mailbox);
     if(mailbox_index != 0){ 
@@ -234,9 +241,13 @@ void loop() {
         last_send_time = millis();     
       }
     }
+
+    //--sleep loop
     now_send_time = millis();
-    if(last_send_time - now_send_time > power_timeout){
-      
+    if( now_send_time - last_send_time > power_timeout_debug){
+      Serial.println("Enter sleep mode");
+      esp_sleep_enable_ext0_wakeup(GPIO_NUM_27, 0);//Needs to be the same number as ENCODER_BUTTON
+      esp_deep_sleep_start();      
     }
     else{
 
