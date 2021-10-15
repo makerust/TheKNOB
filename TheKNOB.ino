@@ -7,16 +7,55 @@ BleKeyboard bleKeyboard("The KNOB", "Pangolin Design Team", 69);
 
 #define DEBUG
 
+#ifdef DEBUG
+#define DEBUG_PRINT(x) Serial.print(x)
+#define DEBUG_PRINTLN(x) Serial.println(x)
+#else
+#define DEBUG_PRINT(x)
+#define DEBUG_PRINTLN(x)
+#endif
+
+
 //Pin defines
 #define ENCODER_A ((uint8_t) 13)
 #define ENCODER_B ((uint8_t) 14)
 #define ENCODER_BUTTON ((uint8_t) 27)
 #define BUTTON_1 ((uint8_t) 32)
 #define BUTTON_2 ((uint8_t) 33)
-//#define BATT_VOLT_PIN ((uint8_t) 1) 
+#define BATT_VOLT_PIN ((uint8_t) 1) 
 
-RTC_DATA_ATTR int bootCount =0; 
 
+RTC_DATA_ATTR int bootCount =0;
+RTC_DATA_ATTR int wakeDelayB =0; 
+
+/*
+ESP32 ADC Data:
+https://deepbluembedded.com/esp32-adc-tutorial-read-analog-voltage-arduino/
+use a 46k, 10k res div on bat voltage pin to scale 4.7v to 0.75v
+*/
+
+float batt_volt_read(uint8_t pin, float refV, uint8_t precB){
+  float batt_bits = analogRead(pin);
+  float voltage = batt_bits * (refV / static_cast <float>(precB));
+  return voltage;
+}
+
+int batt_chg_percent(uint8_t pin, float refV, uint8_t precB){
+  //This method will be super flawed for a Li battery
+  float batt_volt_now = batt_volt_read(pin, refV, precB);
+  int chg_percent;
+  if(batt_volt_now >= 4.1 )
+    chg_percent = 100;
+  else if (batt_volt_now >= 3.9 && batt_volt_now < 4.1)
+    chg_percent = 80;
+  else if (batt_volt_now >= 3.8 && batt_volt_now < 3.9)
+    chg_percent = 60;
+  else if (batt_volt_now >= 3.7 && batt_volt_now < 3.8)
+    chg_percent = 40;
+  else if (batt_volt_now < 3.7)
+    chg_percent = 20;
+  return chg_percent;
+}
 
 
 //Global mailbox array
@@ -37,7 +76,7 @@ uint8_t mb_search(uint8_t mailbox[]){
 
 portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
 
-void IRAM_ATTR enc_ISR() {//remove whole keypresses from ISR and replace with buffer.
+void IRAM_ATTR enc_ISR() {
   portENTER_CRITICAL(&mux);//disable interrupts
 
   //-- encoder states are read first since they are fast
@@ -100,7 +139,6 @@ void IRAM_ATTR enc_ISR() {//remove whole keypresses from ISR and replace with bu
     
     if (index_now <= (MAILBOX_LENGTH-1)){//Check to not overflow the mailbox array.
     // If service cannot empty in time, itmes are not added to mailbox
-    //-- This function puts a message into for each distinct key event
  
       if(button_state_now == 1){ //if FFRW key pressed, encoder encodes for FFRW
         if(enc_position > 0){
@@ -150,14 +188,10 @@ void IRAM_ATTR key_detect(){
 }
 
 void setup() {
+  //clear the mailbox on boot
   for (int i = 0; i < MAILBOX_LENGTH; i++){
     key_mailbox[i]=0;    
   }
-  //the above may be a problem for caching keypresses between wakeup
-  //and boot. Suggested static "BOOT" bool set to 1 in Setup()
-
-  //Remove ENCODER_BUTTON as a RTC gpio
-  //rtc_gpio_deinit(GPIO_NUM_27);
 
   // make the pushButton pin an input:
   pinMode(BUTTON_2, INPUT_PULLUP);
@@ -178,61 +212,60 @@ void setup() {
   #endif
 
   bleKeyboard.begin();
-  bleKeyboard.print("Connected");
+
 }
 
 
 
 void loop() {
-    //timing globals for power saving
+  //timing variables for power saving
   static unsigned long last_send_time = 0;
   unsigned long now_send_time;
-  
-  unsigned long power_timeout_debug = 60000; //600000;// Ten minutes in ms  
-  if(bleKeyboard.isConnected()){
-    uint8_t mailbox_index =mb_search(key_mailbox);
+  unsigned long power_timeout_debug = 30000; //600000;// Ten minutes in ms  
+
+  if(wakeDelayB == 1){//A few things to try to have a more seamless wake
+    //bleKeyboard.write(KEY_F22);//this mostly works
+    //bleKeyboard.begin();
+    bleKeyboard.setBatteryLevel(batt_chg_percent(1, 1.2, 4096));//mostly works
+    DEBUG_PRINT("Battery level ");
+    DEBUG_PRINT(batt_chg_percent(1, 1.2, 4096));
+    DEBUG_PRINTLN("%");
+    DEBUG_PRINTLN("Waking up");
+    delay(1000);
+    wakeDelayB = 0;
+  }
+
+  if(bleKeyboard.isConnected() && wakeDelayB ==0){
+    uint8_t mailbox_index = mb_search(key_mailbox);
     if(mailbox_index != 0){ 
-      #ifdef DEBUG
-      Serial.print("Send Mailbox size: ");
-      Serial.println(mailbox_index);    
-      #endif
+      DEBUG_PRINT("Send Mailbox size: ");
+      DEBUG_PRINTLN(mailbox_index);
+
       for( int i = 0; i < (MAILBOX_LENGTH-1); i++){//This can be replaced with logic that only iterates over mailbox_index, but to start with, clear the WHOLE mailbox
         switch (key_mailbox[i]){
           case 1: 
             bleKeyboard.write(KEY_F23);
-            #ifdef DEBUG
-            Serial.println("Send Function Key");
-            #endif
+            DEBUG_PRINTLN("Send Function Key");
             break;
           case 2:
             bleKeyboard.write(KEY_MEDIA_NEXT_TRACK);
-            #ifdef DEBUG
-            Serial.println("Send FF Key");
-            #endif
+            DEBUG_PRINTLN("Send FF Key");
             break;
           case 3:
             bleKeyboard.write(KEY_MEDIA_PREVIOUS_TRACK);
-            #ifdef DEBUG
-            Serial.println("Send RW Key");
-            #endif
+            DEBUG_PRINTLN("Send RW Key");
             break;
           case 4:
             bleKeyboard.write(KEY_MEDIA_PLAY_PAUSE);
-            #ifdef DEBUG
-            Serial.println("Send Play Pause Key");
-            #endif
+            DEBUG_PRINTLN("Send Play Pause Key");
             break;
           case 5:
             bleKeyboard.write(KEY_MEDIA_VOLUME_UP);
-            #ifdef DEBUG
-            Serial.println("Send UP Key");
-            #endif
+            DEBUG_PRINTLN("Send UP Key");
             break;
           case 6:
             bleKeyboard.write(KEY_MEDIA_VOLUME_DOWN);
-            #ifdef DEBUG
-            Serial.println("Send DOWN Key");
-            #endif
+            DEBUG_PRINTLN("Send DOWN Key");
             break;
           default:
             break;
@@ -245,19 +278,28 @@ void loop() {
     //--sleep loop
     now_send_time = millis();
     if( now_send_time - last_send_time > power_timeout_debug){
-      Serial.println("Enter sleep mode");
+      DEBUG_PRINTLN("Enter sleep mode");
+      wakeDelayB = 1;
       esp_sleep_enable_ext0_wakeup(GPIO_NUM_27, 0);//Needs to be the same number as ENCODER_BUTTON
       esp_deep_sleep_start();      
     }
-    else{
 
+    if (millis() % 60000 == 1){
+      static int batt_chg = 69;
+      int batt_chg_now = batt_chg_percent(1, 1.2, 4096);
+      if (batt_chg_now != batt_chg){
+        batt_chg = batt_chg_now;
+        bleKeyboard.setBatteryLevel(batt_chg);
+        DEBUG_PRINT("Battery Level set to ");
+        DEBUG_PRINTLN(batt_chg);
+      }
     }
+
      
   }
   else{
-    #ifdef DEBUG
-    Serial.println("Disconnected");
-    delay(1000);
-    #endif    
+    if (millis() % 1000 == 1){
+      DEBUG_PRINTLN("Disconnected"); 
+    }   
   }
 }
