@@ -221,7 +221,7 @@ void loop() {
   //timing variables for power saving
   static unsigned long last_send_time = 0;
   unsigned long now_send_time;
-  unsigned long power_timeout_debug = 30000; //600000;// Ten minutes in ms  
+  unsigned long power_timeout_debug = 300000; //600000;// Ten minutes in ms  
 
   if(wakeDelayB == 1){//A few things to try to have a more seamless wake
     //bleKeyboard.write(KEY_F22);//this mostly works
