@@ -5,6 +5,9 @@
 //https://github.com/T-vK/ESP32-BLE-Keyboard/tree/0.2.3
 BleKeyboard bleKeyboard("The KNOB", "Pangolin Design Team", 69);
 
+#include <Adafruit_NeoPixel.h>
+
+
 #define DEBUG
 
 #ifdef DEBUG
@@ -22,7 +25,12 @@ BleKeyboard bleKeyboard("The KNOB", "Pangolin Design Team", 69);
 #define ENCODER_BUTTON ((uint8_t) 27)
 #define BUTTON_1 ((uint8_t) 32)
 #define BUTTON_2 ((uint8_t) 33)
-#define BATT_VOLT_PIN ((uint8_t) 1) 
+#define BATT_VOLT_PIN ((uint8_t) 1)
+#define LED_PIN 15
+
+#define LED_COUNT 1
+
+Adafruit_NeoPixel strip(LED_COUNT, LED_PIN, NEO_GRB + NEO_KHZ800);
 
 
 RTC_DATA_ATTR int bootCount =0;
@@ -205,6 +213,8 @@ void setup() {
   pinMode(ENCODER_B, INPUT);
   attachInterrupt(digitalPinToInterrupt(ENCODER_B), enc_ISR, CHANGE);
 
+  pinMode(LED_PIN, OUTPUT);
+
   // initialize control over the keyboard:
   #ifdef DEBUG
   Serial.begin(115200);
@@ -213,6 +223,22 @@ void setup() {
 
   bleKeyboard.begin();
 
+  strip.begin();
+  strip.show(); // Initialize all pixels to 'off'
+
+//  strip.setPixelColor(0, 25, 0, 0);
+//  DEBUG_PRINTLN("Red");
+//  strip.show();
+//  delay(3000);
+//  strip.setPixelColor(0, 0, 25, 0);
+//  DEBUG_PRINTLN("Green");
+//  strip.show();
+//  delay(3000);
+//  strip.setPixelColor(0, 0, 0, 25);
+//  DEBUG_PRINTLN("Blue");
+//  strip.show();
+//  delay(3000);
+
 }
 
 
@@ -220,12 +246,15 @@ void setup() {
 void loop() {
   //timing variables for power saving
   static unsigned long last_send_time = 0;
-  unsigned long now_send_time;
+  unsigned long now_time;
+  static unsigned long led_set_time;
   unsigned long power_timeout_debug = 300000; //600000;// Ten minutes in ms  
+  static bool led_on = 0;
 
   if(wakeDelayB == 1){//A few things to try to have a more seamless wake
-    //bleKeyboard.write(KEY_F22);//this mostly works
-    //bleKeyboard.begin();
+
+    strip.setPixelColor(0, 0, 0, 12);
+    strip.show();
     bleKeyboard.setBatteryLevel(batt_chg_percent(1, 1.2, 4096));//mostly works
     DEBUG_PRINT("Battery level ");
     DEBUG_PRINT(batt_chg_percent(1, 1.2, 4096));
@@ -233,6 +262,7 @@ void loop() {
     DEBUG_PRINTLN("Waking up");
     delay(1000);
     wakeDelayB = 0;
+    
   }
 
   if(bleKeyboard.isConnected() && wakeDelayB ==0){
@@ -276,30 +306,51 @@ void loop() {
     }
 
     //--sleep loop
-    now_send_time = millis();
-    if( now_send_time - last_send_time > power_timeout_debug){
+    now_time = millis();
+    if( now_time - last_send_time > power_timeout_debug){
+      strip.setPixelColor(0, 0, 0, 25);
+      strip.show();
       DEBUG_PRINTLN("Enter sleep mode");
       wakeDelayB = 1;
+      delay(200);
+      strip.setPixelColor(0, 0, 0, 0);
+      strip.show();
       esp_sleep_enable_ext0_wakeup(GPIO_NUM_27, 0);//Needs to be the same number as ENCODER_BUTTON
       esp_deep_sleep_start();      
     }
 
-    if (millis() % 60000 == 1){
-      static int batt_chg = 69;
-      int batt_chg_now = batt_chg_percent(1, 1.2, 4096);
-      if (batt_chg_now != batt_chg){
-        batt_chg = batt_chg_now;
-        bleKeyboard.setBatteryLevel(batt_chg);
-        DEBUG_PRINT("Battery Level set to ");
-        DEBUG_PRINTLN(batt_chg);
-      }
+    if (led_on == 0 && now_time % 2000 == 1){
+      strip.setPixelColor(0, 0, 12, 0);
+      strip.show();
+      led_set_time = now_time;
+      led_on = 1;      
     }
+
+    if(led_on == 1 && ((now_time - led_set_time) > 250)){
+      strip.setPixelColor(0, 0, 0, 0);
+      strip.show();
+      led_on = 0;
+    }
+
+//    if (millis() % 60000 == 1){
+//      static int batt_chg = 69;
+//      int batt_chg_now = batt_chg_percent(1, 1.2, 4096);
+//      if (batt_chg_now != batt_chg){
+//        batt_chg = batt_chg_now;
+//        bleKeyboard.setBatteryLevel(batt_chg);
+//        DEBUG_PRINT("Battery Level set to ");
+//        DEBUG_PRINTLN(batt_chg);
+//      }
+//    }
 
      
   }
   else{
     if (millis() % 1000 == 1){
-      DEBUG_PRINTLN("Disconnected"); 
+      strip.setPixelColor(0, 25, 0, 0);
+      strip.show(); 
+      DEBUG_PRINTLN("Disconnected");
+      delay(750);
     }   
   }
 }
