@@ -26,7 +26,7 @@ BleKeyboard bleKeyboard("The KNOB", "Pangolin Design Team", 69);
 #define BUTTON_1 ((uint8_t) 32)
 #define BUTTON_2 ((uint8_t) 33)
 #define BATT_VOLT_PIN ((uint8_t) 1)
-#define LED_PIN 15
+#define LED_PIN 4//15
 
 #define LED_COUNT 1
 
@@ -195,8 +195,37 @@ void IRAM_ATTR key_detect(){
   portEXIT_CRITICAL(&mux);//enable interrupts  
 }
 
+
+uint32_t red = strip.Color(6, 0, 0);
+uint32_t green = strip.Color(0, 6, 0);
+uint32_t blue = strip.Color(0, 0, 6);
+uint32_t white = strip.Color(4, 4, 4);
+
+bool blink(bool led_stat, uint32_t color){
+   unsigned long time_millis = millis();
+   static unsigned long set_time_millis;
+    if (led_stat == 0 && time_millis % 2750 == 1){
+      strip.setPixelColor(0, color);
+      strip.show();
+      set_time_millis = time_millis;
+      led_stat = 1;      
+    }
+    if(led_stat == 1 && ((time_millis - set_time_millis) > 250)){
+      strip.setPixelColor(0, 0, 0, 0);
+      strip.show();
+      led_stat = 0;
+    }
+  return led_stat;
+}
+
 void setup() {
-  //clear the mailbox on boot
+  pinMode(LED_PIN, OUTPUT);
+  strip.begin();
+  strip.show(); // Initialize all pixels to 'off'
+  strip.setPixelColor(0, white);
+  strip.show();
+
+    //clear the mailbox on boot
   for (int i = 0; i < MAILBOX_LENGTH; i++){
     key_mailbox[i]=0;    
   }
@@ -213,8 +242,6 @@ void setup() {
   pinMode(ENCODER_B, INPUT);
   attachInterrupt(digitalPinToInterrupt(ENCODER_B), enc_ISR, CHANGE);
 
-  pinMode(LED_PIN, OUTPUT);
-
   // initialize control over the keyboard:
   #ifdef DEBUG
   Serial.begin(115200);
@@ -222,22 +249,7 @@ void setup() {
   #endif
 
   bleKeyboard.begin();
-
-  strip.begin();
-  strip.show(); // Initialize all pixels to 'off'
-
-//  strip.setPixelColor(0, 25, 0, 0);
-//  DEBUG_PRINTLN("Red");
-//  strip.show();
-//  delay(3000);
-//  strip.setPixelColor(0, 0, 25, 0);
-//  DEBUG_PRINTLN("Green");
-//  strip.show();
-//  delay(3000);
-//  strip.setPixelColor(0, 0, 0, 25);
-//  DEBUG_PRINTLN("Blue");
-//  strip.show();
-//  delay(3000);
+  strip.show();
 
 }
 
@@ -246,9 +258,7 @@ void setup() {
 void loop() {
   //timing variables for power saving
   static unsigned long last_send_time = 0;
-  unsigned long now_time;
-  static unsigned long led_set_time;
-  unsigned long power_timeout_debug = 300000; //600000;// Ten minutes in ms  
+  unsigned long power_timeout_debug = 300000; //Five minutes in ms  
   static bool led_on = 0;
 
   if(wakeDelayB == 1){//A few things to try to have a more seamless wake
@@ -266,6 +276,9 @@ void loop() {
   }
 
   if(bleKeyboard.isConnected() && wakeDelayB ==0){
+
+    led_on = blink(led_on, green);
+
     uint8_t mailbox_index = mb_search(key_mailbox);
     if(mailbox_index != 0){ 
       DEBUG_PRINT("Send Mailbox size: ");
@@ -303,54 +316,38 @@ void loop() {
         key_mailbox[i] = 0;
         last_send_time = millis();     
       }
-    }
-
-    //--sleep loop
-    now_time = millis();
-    if( now_time - last_send_time > power_timeout_debug){
-      strip.setPixelColor(0, 0, 0, 25);
-      strip.show();
-      DEBUG_PRINTLN("Enter sleep mode");
-      wakeDelayB = 1;
-      delay(200);
-      strip.setPixelColor(0, 0, 0, 0);
-      strip.show();
-      esp_sleep_enable_ext0_wakeup(GPIO_NUM_27, 0);//Needs to be the same number as ENCODER_BUTTON
-      esp_deep_sleep_start();      
-    }
-
-    if (led_on == 0 && now_time % 2000 == 1){
-      strip.setPixelColor(0, 0, 12, 0);
-      strip.show();
-      led_set_time = now_time;
-      led_on = 1;      
-    }
-
-    if(led_on == 1 && ((now_time - led_set_time) > 250)){
-      strip.setPixelColor(0, 0, 0, 0);
-      strip.show();
-      led_on = 0;
-    }
-
-//    if (millis() % 60000 == 1){
-//      static int batt_chg = 69;
-//      int batt_chg_now = batt_chg_percent(1, 1.2, 4096);
-//      if (batt_chg_now != batt_chg){
-//        batt_chg = batt_chg_now;
-//        bleKeyboard.setBatteryLevel(batt_chg);
-//        DEBUG_PRINT("Battery Level set to ");
-//        DEBUG_PRINTLN(batt_chg);
-//      }
-//    }
-
-     
-  }
-  else{
-    if (millis() % 1000 == 1){
-      strip.setPixelColor(0, 25, 0, 0);
-      strip.show(); 
-      DEBUG_PRINTLN("Disconnected");
-      delay(750);
     }   
+  }
+  
+  else{
+    led_on = blink(led_on, red);
+    if (millis() % 1000 == 1){
+      DEBUG_PRINTLN("Disconnected");
+    }   
+  }
+  
+  //--sleep loop
+  if( (millis()) - last_send_time > power_timeout_debug){
+    strip.setPixelColor(0, 0, 0, 25);
+    strip.show();
+    DEBUG_PRINTLN("Enter sleep mode");
+    wakeDelayB = 1;
+    delay(200);
+    strip.setPixelColor(0, 0, 0, 0);
+    strip.show();
+    esp_sleep_enable_ext0_wakeup(GPIO_NUM_27, 0);//Needs to be the same number as ENCODER_BUTTON
+    esp_deep_sleep_start();      
+  }
+
+  //-- battery charge update
+  if (millis() % 60000 == 1){
+    static int batt_chg = 69;
+    int batt_chg_now = batt_chg_percent(1, 1.2, 4096);
+    if (batt_chg_now != batt_chg){
+      batt_chg = batt_chg_now;
+      bleKeyboard.setBatteryLevel(batt_chg);
+      DEBUG_PRINT("Battery Level set to ");
+      DEBUG_PRINTLN(batt_chg);
+    }
   }
 }
