@@ -1,4 +1,4 @@
-/* -- The Kinesthetic Oblate Novelty Button --
+/* -- The Kinesthetic Novelty Oblate Button --
 */
 
 #include <BleKeyboard.h>//works with version 0.2.3 of the library
@@ -20,13 +20,15 @@ BleKeyboard bleKeyboard("The KNOB", "Pangolin Design Team", 69);
 
 
 //Pin defines
+#define BATT_VOLT_PIN ((uint8_t) 1)
+#define LED_PIN 4//15
 #define ENCODER_A ((uint8_t) 13)
 #define ENCODER_B ((uint8_t) 14)
 #define ENCODER_BUTTON ((uint8_t) 27)
 #define BUTTON_1 ((uint8_t) 32)
 #define BUTTON_2 ((uint8_t) 33)
-#define BATT_VOLT_PIN ((uint8_t) 1)
-#define LED_PIN 4//15
+
+
 
 #define LED_COUNT 1
 
@@ -196,10 +198,10 @@ void IRAM_ATTR key_detect(){
 }
 
 
-uint32_t red = strip.Color(6, 0, 0);
-uint32_t green = strip.Color(0, 6, 0);
-uint32_t blue = strip.Color(0, 0, 6);
-uint32_t white = strip.Color(4, 4, 4);
+uint32_t red = strip.Color(18, 0, 0);
+uint32_t green = strip.Color(0, 18, 0);
+uint32_t blue = strip.Color(0, 0, 18);
+uint32_t white = strip.Color(6, 8, 8);
 
 bool blink(bool led_stat, uint32_t color){
    unsigned long time_millis = millis();
@@ -287,7 +289,7 @@ void loop() {
       for( int i = 0; i < (MAILBOX_LENGTH-1); i++){//This can be replaced with logic that only iterates over mailbox_index, but to start with, clear the WHOLE mailbox
         switch (key_mailbox[i]){
           case 1: 
-            bleKeyboard.write(KEY_F23);
+            bleKeyboard.write(KEY_F8);
             DEBUG_PRINTLN("Send Function Key");
             break;
           case 2:
@@ -328,7 +330,7 @@ void loop() {
   
   //--sleep loop
   if( (millis()) - last_send_time > power_timeout_debug){
-    strip.setPixelColor(0, 0, 0, 25);
+    strip.setPixelColor(0, blue);
     strip.show();
     DEBUG_PRINTLN("Enter sleep mode");
     wakeDelayB = 1;
