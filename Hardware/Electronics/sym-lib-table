@@ -1,0 +1,3 @@
+(sym_lib_table
+  (lib (name "TheKnobLib")(type "KiCad")(uri "${KIPRJMOD}/TheKnobLib.kicad_sym")(options "")(descr ""))
+)
