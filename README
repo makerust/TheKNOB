@@ -1,0 +1,17 @@
+# TheKNOB
+
+# First Time Setup for development
+`git pull --recurse-submodules`
+Sketch > Include Library > Add .ZIP Library
+Navigate to the ESP library in thirdparty
+
+In:
+File > Preference > Additional Boards Manager URLS
+Add:
+`https://dl.espressif.com/dl/package_esp32_index.json, http://arduino.esp8266.com/stable/package_esp8266com_index.json`
+Select:
+Tools > Board > Board Manager
+Search: ESP32
+Install Board Library
+Select:
+Tools > Board > Board Manager > ESP32 Dev Module
