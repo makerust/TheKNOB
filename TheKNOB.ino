@@ -104,11 +104,20 @@ uint8_t mb_search(uint8_t mailbox[]) {
   return last_used_index;
 }
 
-portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
 //This is used as a mutex in ESP code to handle interrupts
+struct critical_section{
+  static portMUX_TYPE mux;
+  critical_section(){
+    portENTER_CRITICAL(&mux);//disable interrupts
+  }
+  ~critical_section(){
+    portEXIT_CRITICAL(&mux);//enable interrupts
+  }
+};
+portMUX_TYPE critical_section::mux = portMUX_INITIALIZER_UNLOCKED;
 
 void IRAM_ATTR enc_ISR() {
-  portENTER_CRITICAL(&mux);//disable interrupts
+  auto c = critical_section{};
 
   //-- encoder states are read first since they are fast
   // other button state read after debounce
@@ -192,12 +201,11 @@ void IRAM_ATTR enc_ISR() {
       }
     }
   }
-  portEXIT_CRITICAL(&mux);//reenable interrupts
   return;
 }
 
 void IRAM_ATTR key_detect() {
-  portENTER_CRITICAL(&mux);//disable interrupts
+  auto c = critical_section{};
   static unsigned long last_interrupt_time2 = 0;
   unsigned long interrupt_time2 = millis();
 
@@ -218,7 +226,6 @@ void IRAM_ATTR key_detect() {
       }
     }
   }
-  portEXIT_CRITICAL(&mux);//enable interrupts
 }
 
 
