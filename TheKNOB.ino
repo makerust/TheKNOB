@@ -74,18 +74,17 @@ int batt_chg_percent(uint8_t pin, float refV, float precB, float resDivRatio) {
 
   float batt_volt_now = batt_volt_roll/batt_buff_size;
   //float batt_volt_now = resDivRatio * volt_read(pin, refV, precB);
-  int chg_percent;
+
   if (batt_volt_now >= 4.1 )
-    chg_percent = 100;
-  else if (batt_volt_now >= 3.9 && batt_volt_now < 4.1)
-    chg_percent = 80;
-  else if (batt_volt_now >= 3.8 && batt_volt_now < 3.9)
-    chg_percent = 60;
-  else if (batt_volt_now >= 3.7 && batt_volt_now < 3.8)
-    chg_percent = 40;
-  else if (batt_volt_now < 3.7)
-    chg_percent = 20;
-  return chg_percent;
+    return 100;
+  else if (batt_volt_now >= 3.9)
+    return 80;
+  else if (batt_volt_now >= 3.8)
+    return 60;
+  else if (batt_volt_now >= 3.7)
+    return 40;
+  else
+    return 20;
 }
 
 
