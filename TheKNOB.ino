@@ -20,18 +20,19 @@ BleKeyboard bleKeyboard("The KNOB", "Pangolin Design Team", 69);
 
 
 //Pin defines
-#define BATT_VOLT_PIN ((uint8_t) 34)
-#define CHG_STAT ((uint8_t) 35)
-#define USB_VOLT_PIN ((uint8_t) 32)
-#define BUTTON_1 ((uint8_t) 33)
-#define BUTTON_2 ((uint8_t) 26)
-#define ENCODER_BUTTON ((uint8_t) 27)
-#define ENCODER_B ((uint8_t) 14)
-#define ENCODER_A ((uint8_t) 13)
-#define LED_PIN 4
+constexpr auto BATT_VOLT_PIN = 34;
+constexpr auto CHG_STAT = 35;
+constexpr auto USB_VOLT_PIN = 32;
+constexpr auto BUTTON_1 = 33;
+constexpr auto BUTTON_2 = 26;
+constexpr auto ENCODER_BUTTON = 27;
+constexpr auto ENCODER_B = 14;
+constexpr auto ENCODER_A = 13;
+constexpr auto LED_PIN = 4;
 
 
 #define LED_COUNT 3
+
 
 Adafruit_NeoPixel strip(LED_COUNT, LED_PIN, NEO_GRB + NEO_KHZ800);
 
@@ -50,10 +51,10 @@ RTC_DATA_ATTR int wakeDelayB = 0;
   ADC 4095
 */
 
-float adc_volt_div_correction = 5.7;
-float refV = 1.085;
-float precB = 4095;
-float usbVoltThresh = 0.6;
+constexpr float adc_volt_div_correction = 5.7;
+constexpr float refV = 1.085;
+constexpr float precB = 4095;
+constexpr float usbVoltThresh = 0.6;
 
 
 float volt_read(uint8_t pin, float refV, float precB) {
