@@ -6,6 +6,7 @@
 //https://github.com/T-vK/ESP32-BLE-Keyboard/tree/0.2.3
 BleKeyboard bleKeyboard("The KNOB", "Pangolin Design Team", 69);
 #include <Adafruit_NeoPixel.h>
+#include "mailbox.hpp"
 
 
 #define DEBUG
@@ -20,18 +21,29 @@ BleKeyboard bleKeyboard("The KNOB", "Pangolin Design Team", 69);
 
 
 //Pin defines
-#define BATT_VOLT_PIN ((uint8_t) 34)
-#define CHG_STAT ((uint8_t) 35)
-#define USB_VOLT_PIN ((uint8_t) 32)
-#define BUTTON_1 ((uint8_t) 33)
-#define BUTTON_2 ((uint8_t) 26)
-#define ENCODER_BUTTON ((uint8_t) 27)
-#define ENCODER_B ((uint8_t) 14)
-#define ENCODER_A ((uint8_t) 13)
-#define LED_PIN 4
+constexpr auto BATT_VOLT_PIN = 34;
+constexpr auto CHG_STAT = 35;
+constexpr auto USB_VOLT_PIN = 32;
+constexpr auto BUTTON_1 = 33;
+constexpr auto BUTTON_2 = 26;
+constexpr auto ENCODER_BUTTON = 27;
+constexpr auto ENCODER_B = 14;
+constexpr auto ENCODER_A = 13;
+constexpr auto LED_PIN = 4;
 
 
 #define LED_COUNT 3
+
+
+enum class Action : uint8_t{
+  no_action = 0,
+  fast_forward = 2,
+  reverse = 3,
+  volume_up = 5,
+  volume_down = 6,
+  function_press = 1,
+  encoder_press = 4
+};
 
 Adafruit_NeoPixel strip(LED_COUNT, LED_PIN, NEO_GRB + NEO_KHZ800);
 
@@ -50,10 +62,10 @@ RTC_DATA_ATTR int wakeDelayB = 0;
   ADC 4095
 */
 
-float adc_volt_div_correction = 5.7;
-float refV = 1.085;
-float precB = 4095;
-float usbVoltThresh = 0.6;
+constexpr float adc_volt_div_correction = 5.7;
+constexpr float refV = 1.085;
+constexpr float precB = 4095;
+constexpr float usbVoltThresh = 0.6;
 
 
 float volt_read(uint8_t pin, float refV, float precB) {
@@ -73,42 +85,36 @@ int batt_chg_percent(uint8_t pin, float refV, float precB, float resDivRatio) {
 
   float batt_volt_now = batt_volt_roll/batt_buff_size;
   //float batt_volt_now = resDivRatio * volt_read(pin, refV, precB);
-  int chg_percent;
-  if (batt_volt_now >= 4.1 )
-    chg_percent = 100;
-  else if (batt_volt_now >= 3.9 && batt_volt_now < 4.1)
-    chg_percent = 80;
-  else if (batt_volt_now >= 3.8 && batt_volt_now < 3.9)
-    chg_percent = 60;
-  else if (batt_volt_now >= 3.7 && batt_volt_now < 3.8)
-    chg_percent = 40;
-  else if (batt_volt_now < 3.7)
-    chg_percent = 20;
-  return chg_percent;
-}
 
+  if (batt_volt_now >= 4.1 )
+    return 100;
+  else if (batt_volt_now >= 3.9)
+    return 80;
+  else if (batt_volt_now >= 3.8)
+    return 60;
+  else if (batt_volt_now >= 3.7)
+    return 40;
+  else
+    return 20;
+}
 
 //Global mailbox array
-#define MAILBOX_LENGTH 40
-uint8_t key_mailbox[MAILBOX_LENGTH];
+mailbox<Action, 40> key_mailbox;
 
-uint8_t mb_search(uint8_t mailbox[]) {
-  uint8_t mailbox_length = MAILBOX_LENGTH;//pass this, what were you thinking?
-  uint8_t last_used_index = 0;
-  for (uint8_t i = 0; i < (mailbox_length - 1); i++) {
-    if (mailbox[i] == 0) {
-      last_used_index = i;
-      break;
-    }
-  }
-  return last_used_index;
-}
-
-portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
 //This is used as a mutex in ESP code to handle interrupts
+struct critical_section{
+  static portMUX_TYPE mux;
+  critical_section(){
+    portENTER_CRITICAL(&mux);//disable interrupts
+  }
+  ~critical_section(){
+    portEXIT_CRITICAL(&mux);//enable interrupts
+  }
+};
+portMUX_TYPE critical_section::mux = portMUX_INITIALIZER_UNLOCKED;
 
 void IRAM_ATTR enc_ISR() {
-  portENTER_CRITICAL(&mux);//disable interrupts
+  auto c = critical_section{};
 
   //-- encoder states are read first since they are fast
   // other button state read after debounce
@@ -169,35 +175,32 @@ void IRAM_ATTR enc_ISR() {
 
     //in practice, the mailbox is largely unnecessary as it never gets filled
     //past the first position
-    uint8_t index_now = mb_search(key_mailbox);
-
-    if (index_now <= (MAILBOX_LENGTH - 1)) { //Check to not overflow the mailbox array.
+    if (!key_mailbox.is_full()) { //Check to not overflow the mailbox array.
       // If service cannot empty in time, itmes are not added to mailbox
 
       if (button_state_now == 1) { //if FFRW key pressed, encoder encodes for FFRW
         if (enc_position > 0) {
-          key_mailbox[index_now] = 2;
+          key_mailbox.push_back(Action::fast_forward);
         }
         if (enc_position < 0) {
-          key_mailbox[index_now] = 3;
+          key_mailbox.push_back(Action::reverse);
         }
       }
       else {
         if (enc_position > 0) { //if not pressed, encode volume
-          key_mailbox[index_now] = 5;
+          key_mailbox.push_back(Action::volume_up);
         }
         else if (enc_position < 0) {
-          key_mailbox[index_now] = 6;
+          key_mailbox.push_back(Action::volume_down);
         }
       }
     }
   }
-  portEXIT_CRITICAL(&mux);//reenable interrupts
   return;
 }
 
 void IRAM_ATTR key_detect() {
-  portENTER_CRITICAL(&mux);//disable interrupts
+  auto c = critical_section{};
   static unsigned long last_interrupt_time2 = 0;
   unsigned long interrupt_time2 = millis();
 
@@ -205,20 +208,16 @@ void IRAM_ATTR key_detect() {
     last_interrupt_time2 = interrupt_time2;
     int encoder_button_state = digitalRead(ENCODER_BUTTON);
     int function_button_state = digitalRead(BUTTON_2);
-    uint8_t index_now = mb_search(key_mailbox);
 
-    if (index_now <= (MAILBOX_LENGTH - 1)) {
+    if (!key_mailbox.is_full()) {
       if (function_button_state == 0) { //function key press.
-        key_mailbox[index_now] = 1;
-        index_now++;
+        key_mailbox.push_back(Action::function_press);
       }
       if (encoder_button_state == 0) { //encoder key press.
-        key_mailbox[index_now] = 4;
-        index_now++;
+        key_mailbox.push_back(Action::encoder_press);
       }
     }
   }
-  portEXIT_CRITICAL(&mux);//enable interrupts
 }
 
 
@@ -274,10 +273,7 @@ void setup() {
   }
   strip.show();
 
-  //clear the mailbox on boot
-  for (int i = 0; i < MAILBOX_LENGTH; i++) {
-    key_mailbox[i] = 0;
-  }
+  key_mailbox.fill(Action::no_action);
 
 
   dac_output_disable(DAC_CHANNEL_1);
@@ -360,41 +356,40 @@ void loop() {
       led_on = blink(led_on, green, led_bkgd);
     }
 
-    uint8_t mailbox_index = mb_search(key_mailbox);
-    if (mailbox_index != 0) {
+    auto count = key_mailbox.count();
+    if (count != 0) {
       DEBUG_PRINT("Send Mailbox size: ");
-      DEBUG_PRINTLN(mailbox_index);
+      DEBUG_PRINTLN(count);
 
-      for ( int i = 0; i < (MAILBOX_LENGTH - 1); i++) { //This can be replaced with logic that only iterates over mailbox_index, but to start with, clear the WHOLE mailbox
-        switch (key_mailbox[i]) {
-          case 1:
+      for (auto i = count; i > 0; i--) {
+        switch (key_mailbox.pop_front()) {
+          case Action::function_press:
             bleKeyboard.write(KEY_F8);
             DEBUG_PRINTLN("Send Function Key");
             break;
-          case 2:
+          case Action::fast_forward:
             bleKeyboard.write(KEY_MEDIA_NEXT_TRACK);
             DEBUG_PRINTLN("Send FF Key");
             break;
-          case 3:
+          case Action::reverse:
             bleKeyboard.write(KEY_MEDIA_PREVIOUS_TRACK);
             DEBUG_PRINTLN("Send RW Key");
             break;
-          case 4:
+          case Action::encoder_press:
             bleKeyboard.write(KEY_MEDIA_PLAY_PAUSE);
             DEBUG_PRINTLN("Send Play Pause Key");
             break;
-          case 5:
+          case Action::volume_up:
             bleKeyboard.write(KEY_MEDIA_VOLUME_UP);
             DEBUG_PRINTLN("Send UP Key");
             break;
-          case 6:
+          case Action::volume_down:
             bleKeyboard.write(KEY_MEDIA_VOLUME_DOWN);
             DEBUG_PRINTLN("Send DOWN Key");
             break;
           default:
             break;
         }
-        key_mailbox[i] = 0;
         last_send_time = millis();
       }
     }
